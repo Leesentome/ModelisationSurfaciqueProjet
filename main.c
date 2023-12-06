@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <Windows.h>
 
 void printLoadingBar(int progress, int total) {
     float percent = ((float)progress) / ((float)total);
@@ -553,14 +552,14 @@ void contractEdge(struct halfEdge* he) {
 
         struct halfEdgeList* prevEdge = find(edges, he->prev);
         pop(&edges, prevEdge);
-        free(prevEdge);
         free(he->prev->vbar);
         free(he->prev);
+        free(prevEdge);
         struct halfEdgeList* nextEdge = find(edges, he->next);
         pop(&edges, nextEdge);
-        free(nextEdge);
         free(he->next->vbar);
         free(he->next);
+        free(nextEdge);
 
         nbFaces -= 1;
         faces[he->face->index] = NULL;
@@ -592,14 +591,14 @@ void contractEdge(struct halfEdge* he) {
 
         struct halfEdgeList* pairPrevEdge = find(edges, pair->prev);
         pop(&edges, pairPrevEdge);
-        free(pairPrevEdge);
         free(pair->prev->vbar);
         free(pair->prev);
+        free(pairPrevEdge);
         struct halfEdgeList* pairNextEdge = find(edges, pair->next);
         pop(&edges, pairNextEdge);
-        free(pairNextEdge);
         free(pair->next->vbar);
         free(pair->next);
+        free(pairNextEdge);
         
         nbFaces -= 1;
         faces[pair->face->index] = NULL;
@@ -623,9 +622,6 @@ void contractEdge(struct halfEdge* he) {
         pairFace->vertexIndex = vertexIndexList;
     }
     
-    // suppression du sommet de la liste des sommets
-    nbVertices -= 1;
-
     struct halfEdgeList* curr = edges;
     while (curr != NULL) {
         if (curr->current->endVertex == he->endVertex || curr->current->startVertex == he->endVertex) {
@@ -634,6 +630,8 @@ void contractEdge(struct halfEdge* he) {
         curr = curr->next;
     }
     
+    // suppression du sommet de la liste des sommets
+    nbVertices -= 1;
     vertices[he->endVertex->index] = NULL;
     free(he->endVertex->Q);
     free(he->endVertex);
@@ -720,7 +718,6 @@ void contractMinErrorEdge() {
         if (cur->current->pair == NULL) {
             printf("Missing pair\n");
         }
-        printf("");
         if (find(edges, cur->current->prev) == NULL) {
             printf("Missing prev edge\n");
         }
@@ -744,7 +741,6 @@ void contractEdgeTo(int goalVertices) {
 }
 
 int main(int argc, char *argv[]) {
-    SetConsoleOutputCP(CP_UTF8);
     // if (argc != 3) {
     //     // Print usage information if the number of arguments is incorrect
     //     printf("Usage: %s <input_file> <output_file>\n", argv[0]);
@@ -757,22 +753,23 @@ int main(int argc, char *argv[]) {
     const char *fileFrom = "3D-Models/eight.off";
     const char *fileDest = "Simplified/eight_res_ter.off";
 
-    printf("%i, %i, %i\n", sizeof(struct vertice), sizeof(struct face), sizeof(struct halfEdge));
+    printf("%li, %li, %li\n", sizeof(struct vertice), sizeof(struct face), sizeof(struct halfEdge));
+    printf("%li, %li\n", 16*sizeof(float), 3*sizeof(struct vertice*));
 
     readFileOFF(fileFrom);
     printf("\n");
 
-    // int goalVertices;
-    // printf("Enter the number of vertices for the output: ");
-    // scanf("%d", &goalVertices);
-    // printf("\n");
+    int goalVertices;
+    printf("Enter the number of vertices for the output: ");
+    scanf("%d", &goalVertices);
+    printf("\n");
 
-    // setHalfEdgeStruct();
+    setHalfEdgeStruct();
 
-    // computeError();
-    // contractEdgeTo(goalVertices);
+    computeError();
+    contractEdgeTo(goalVertices);
 
-    // writeFileOFF(fileDest);
+    writeFileOFF(fileDest);
 
     clearGlobals();
     return 0;
