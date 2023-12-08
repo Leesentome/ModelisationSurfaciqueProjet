@@ -433,9 +433,10 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
             free(temp);
         } else {
             struct halfEdgeAVL* temp = minValueNode(tree->right);
-
             tree->data = temp->data;
             tree->equal = temp->equal;
+
+            temp->equal = NULL;
 
             tree->right = deleteNode(tree->right, temp);
         }
@@ -447,9 +448,9 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
         struct halfEdgeAVL* current = tree;
         while (current->equal != NULL) {
             if (current->equal == node) {
-                struct halfEdgeAVL* temp = current->equal;
                 current->equal = current->equal->equal;
-                free(temp);
+                free(node);
+                break;
             }
             current = current->equal;
         }
@@ -489,26 +490,9 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
 }
 
 void updateTreeFromNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* modified) {
-    if (modified->equal) {
-        struct halfEdge* nodeData = modified->data;
-        deleteNode(tree, modified);
-        insertNode(tree, nodeData);
-    } else if (modified->parent && compareErrors(modified->data->error, modified->parent->data->error)) {
-        struct halfEdge* temp = modified->parent->data;
-        modified->parent->data = modified->data;
-        modified->data = temp;
-        updateTreeFromNode(tree, modified->parent);
-    } else if (modified->left && compareErrors(modified->data->error, modified->left->data->error)) {
-        struct halfEdge* temp = modified->left->data;
-        modified->left->data = modified->data;
-        modified->data = temp;
-        updateTreeFromNode(tree, modified->left);
-    } else if (modified->right && compareErrors(modified->right->data->error, modified->data->error)) {
-        struct halfEdge* temp = modified->right->data;
-        modified->right->data = modified->data;
-        modified->data = temp;
-        updateTreeFromNode(tree, modified->right);
-    }
+    struct halfEdge* nodeData = modified->data;
+    edgesTree = deleteNode(tree, modified);
+    edgesTree = insertNode(tree, nodeData);
 }
 
 void freeAVLTree(struct halfEdgeAVL* tree) {
@@ -519,7 +503,7 @@ void freeAVLTree(struct halfEdgeAVL* tree) {
         while (current != NULL) {
             struct halfEdgeAVL* temp = current;
             current = current->equal;
-            free(current);
+            free(temp);
         }
     }
 }
@@ -930,10 +914,8 @@ void contractEdge(struct halfEdge* he) {
     pop(&edges, pairEdge);
     free(pairEdge);
 
-    deleteNode(edgesTree, findNode(edgesTree, he));
-    deleteNode(edgesTree, findNode(edgesTree, pair));
-
-    printf("NOTHERE\n");
+    edgesTree = deleteNode(edgesTree, findNode(edgesTree, he));
+    edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair));
 
     // ajustement des halfedge au point d'arrive
     struct halfEdge* cur = he->next;
@@ -959,9 +941,8 @@ void contractEdge(struct halfEdge* he) {
         he->prev->pair->pair = he->next->pair;
         he->next->pair->pair = he->prev->pair;
 
-        printf("%li\n", findNode(edgesTree, he->prev));
-        deleteNode(edgesTree, findNode(edgesTree, he->prev));
-        deleteNode(edgesTree, findNode(edgesTree, he->next));
+        edgesTree = deleteNode(edgesTree, findNode(edgesTree, he->prev));
+        edgesTree = deleteNode(edgesTree, findNode(edgesTree, he->next));
 
         struct halfEdgeList* prevEdge = find(edges, he->prev);
         pop(&edges, prevEdge);
@@ -1004,8 +985,8 @@ void contractEdge(struct halfEdge* he) {
         pair->prev->pair->pair = pair->next->pair;
         pair->next->pair->pair = pair->prev->pair;
 
-        deleteNode(edgesTree, findNode(edgesTree, pair->prev));
-        deleteNode(edgesTree, findNode(edgesTree, pair->next));
+        edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair->prev));
+        edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair->next));
 
         struct halfEdgeList* pairPrevEdge = find(edges, pair->prev);
         pop(&edges, pairPrevEdge);
@@ -1042,13 +1023,11 @@ void contractEdge(struct halfEdge* he) {
         pairFace->vertexIndex = vertexIndexList;
     }
 
-    printf("MMMM\n");
-
     // deplacement du sommet
-    he->startVertex->x = he->vbar[0]; 
-    he->startVertex->y = he->vbar[1]; 
+    he->startVertex->x = he->vbar[0];
+    he->startVertex->y = he->vbar[1];
     he->startVertex->z = he->vbar[2];
-    computeVertexMatrix(he->prev->pair->pair);
+    // computeVertexMatrix(he->prev->pair->pair);
 
     // suppression du sommet de la liste des sommets
     nbVertices -= 1;
@@ -1125,15 +1104,10 @@ void recomputeErrorVertex(struct halfEdge* sentinelEdgeForErrorRecompute) {
 }
 
 void contractMinErrorEdge() {
-    printf("FINDING\n");
     struct halfEdge* minErrorEdge = findMinErrorEdge(edges);
     struct halfEdge* sentinelEdgeForErrorRecompute = minErrorEdge->next->pair;
-    printf("CONTRACT\n");
-    printf("%li\n", minErrorEdge);
     contractEdge(minErrorEdge);
-    printf("TEST\n");
     // recomputeErrorVertex(sentinelEdgeForErrorRecompute);
-    // printf("SAD\n");
 }
 
 void contractEdgeTo(int goalVertices) {
@@ -1150,7 +1124,12 @@ void contractEdgeTo(int goalVertices) {
 void printTreeInOrder(struct halfEdgeAVL* tree) {
     if (tree == NULL) return;
     printTreeInOrder(tree->left);
-    printf("%s %s %f\n", tree->data->error->valid ? "t" : "f", tree->data->error->good ? "t" : "f",tree->data->error->err);
+    struct halfEdgeAVL* curr = tree;
+    while (curr != NULL) {
+        printf("%s %s %lf\n", curr->data->error->valid ? "t" : "f", curr->data->error->good ? "t" : "f",curr->data->error->err);
+        curr = curr->equal;
+    }
+    printf("\n");
     printTreeInOrder(tree->right);
 }
 
@@ -1181,10 +1160,10 @@ int main(int argc, char *argv[]) {
     setHalfEdgeStruct();
 
     computeError();
-    printf("FINIIII\n");
+
+    // printTreeInOrder(edgesTree);
 
     contractEdgeTo(goalVertices);
-    printf("PLOP\n");
 
     writeFileOFF(fileDest);
 
