@@ -187,6 +187,7 @@ struct halfEdgeError {
 };
 
 bool compareErrors(struct halfEdgeError* a, struct halfEdgeError* b) {
+    // return a->err < b->err;
     if (a->valid && a->good) {
         if (b->valid && b->good) {
             return a->err < b->err;
@@ -201,11 +202,19 @@ bool compareErrors(struct halfEdgeError* a, struct halfEdgeError* b) {
         } else {
             return true;
         }
-    } else {
-        if (a->good) {
-            return b->valid || (b->good && a->err < b->err); 
+    } else if (a->good) {
+        if (b->valid) {
+            return false;
+        } else if (b->good) {
+            return a->err < b->err;
         } else {
-            return b->valid || b->good || a->err < b->err;
+            return true;
+        }
+    } else {
+        if (b->valid || b->good) {
+            return false;
+        } else {
+            return a->err < b->err;
         }
     }
 }
@@ -333,6 +342,16 @@ int getBalance(struct halfEdgeAVL* tree) {
     return (tree == NULL) ? 0 : height(tree->left) - height(tree->right);
 }
 
+struct halfEdgeAVL* minValueNode(struct halfEdgeAVL* tree) {
+    struct halfEdgeAVL* current = tree;
+
+    while (current->left != NULL) {
+        current = current->left;
+    }
+
+    return current;
+}
+
 struct halfEdgeAVL* insertNode(struct halfEdgeAVL* tree, struct halfEdge* hEdge) {
     if (tree == NULL) {
         return newNode(hEdge);
@@ -350,6 +369,8 @@ struct halfEdgeAVL* insertNode(struct halfEdgeAVL* tree, struct halfEdge* hEdge)
             current = current->equal;
         }
         current->equal = newNode(hEdge);
+
+        return tree;
     }
 
     tree->height = 1 + maxi(height(tree->left), height(tree->right));
@@ -403,16 +424,6 @@ struct halfEdgeAVL* findNode(struct halfEdgeAVL* tree, struct halfEdge* hEdge) {
     return NULL;
 }
 
-struct halfEdgeAVL* minValueNode(struct halfEdgeAVL* tree) {
-    struct halfEdgeAVL* current = tree;
-
-    while (current->left != NULL) {
-        current = current->left;
-    }
-
-    return current;
-}
-
 struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* node) {
     if (tree == node) {
         if (tree->equal) {
@@ -420,6 +431,7 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
             struct halfEdgeAVL* temp = tree->equal;
             tree->equal = tree->equal->equal;
             free(temp);
+            return tree;
         } else if (tree->left == NULL || tree->right == NULL) {
             struct halfEdgeAVL* temp = tree->left ? tree->left : tree->right;
 
@@ -427,16 +439,23 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
                 temp = tree;
                 tree = NULL;
             } else {
-                *tree = *temp;
+                tree->data = temp->data;
+                tree->parent = temp->parent;
+                tree->equal = temp->equal;
+                tree->left = temp->left;
+                tree->right = temp->right;
+                tree->height = temp->height;
             }
 
             free(temp);
         } else {
             struct halfEdgeAVL* temp = minValueNode(tree->right);
+            struct halfEdge* treeData = tree->data;
             tree->data = temp->data;
             tree->equal = temp->equal;
-
+            
             temp->equal = NULL;
+            temp->data = treeData;
 
             tree->right = deleteNode(tree->right, temp);
         }
@@ -454,6 +473,7 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
             }
             current = current->equal;
         }
+        return tree;
     }
 
     if (tree == NULL) {
@@ -489,10 +509,17 @@ struct halfEdgeAVL* deleteNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* nod
     return tree;
 }
 
-void updateTreeFromNode(struct halfEdgeAVL* tree, struct halfEdgeAVL* modified) {
+void updateTreeFromNode(struct halfEdgeAVL* modified, struct halfEdgeError* oldErr) {
     struct halfEdge* nodeData = modified->data;
-    edgesTree = deleteNode(tree, modified);
-    edgesTree = insertNode(tree, nodeData);
+    struct halfEdgeError* newErr = modified->data->error;
+    nodeData->error = oldErr;
+ 
+    edgesTree = deleteNode(edgesTree, modified);
+
+    nodeData->error = newErr;
+
+    edgesTree = insertNode(edgesTree, nodeData);
+
 }
 
 void freeAVLTree(struct halfEdgeAVL* tree) {
@@ -503,6 +530,10 @@ void freeAVLTree(struct halfEdgeAVL* tree) {
         while (current != NULL) {
             struct halfEdgeAVL* temp = current;
             current = current->equal;
+
+            free(temp->data->error);
+            free(temp->data->vbar);
+            free(temp->data);
             free(temp);
         }
     }
@@ -757,28 +788,43 @@ void computeHalfEdgeLengthError(struct halfEdge* he) {
 bool validContract(struct halfEdge* he) {
     struct vertice** oneRingVertices = malloc(sizeof(struct vertice*) * nbVertices);
 
-    int index = 0;
+    oneRingVertices[0] = he->startVertex;
+
+    int index = 1;
+    int nbVois = 0;
     struct halfEdge* cur = he->next->pair;
     while (cur != he) {
         oneRingVertices[index] = cur->startVertex;
         cur = cur->next->pair;
         index++;
+        nbVois++;
     }
 
     int cpt = 0;
+
+    for (int i = 0; i < index; i++) {
+        if (he->endVertex == oneRingVertices[i]) {
+            cpt++;
+        }
+    }
+
     cur = he->pair->next;
     while (cur != he) {
+        bool seen = false;
         for (int i = 0; i < index; i++) {
             if (cur->endVertex == oneRingVertices[i]) {
+                seen = true;
                 cpt++;
             }
+        }
+        if (!seen) {
+            nbVois++;
         }
         cur = cur->pair->next;
     }
 
     free(oneRingVertices);
-
-    return cpt == 2;
+    return (nbVois != 2) && (cpt == 2);
 }
 
 bool goodContract(struct halfEdge* he) {
@@ -795,13 +841,16 @@ bool goodContract(struct halfEdge* he) {
         C = he->next->endVertex;
         computePlaneEquation(A, B, C, &a, &b, &c, &d);
 
+        A = he->startVertex;
         Bbar->x = he->vbar[0];
         Bbar->y = he->vbar[1];
         Bbar->z = he->vbar[2];
+        C = he->next->endVertex;
         computePlaneEquation(A, Bbar, C, &abar, &bbar, &cbar, &dbar);
 
-        float dot = a*abar + b*bbar + c*cbar + d*dbar;
-        if (dot < 0) {
+        float dot = a*abar + b*bbar + c*cbar;
+        if (dot < 0.8) {
+            free(Bbar);
             return false;
         }
 
@@ -815,13 +864,16 @@ bool goodContract(struct halfEdge* he) {
         C = he->next->endVertex;
         computePlaneEquation(A, B, C, &a, &b, &c, &d);
 
+        A = he->startVertex;
         Bbar->x = he->vbar[0];
         Bbar->y = he->vbar[1];
         Bbar->z = he->vbar[2];
+        C = he->next->endVertex;
         computePlaneEquation(A, Bbar, C, &abar, &bbar, &cbar, &dbar);
 
-        float dot = a*abar + b*bbar + c*cbar + d*dbar;
-        if (dot < 0) {
+        float dot = a*abar + b*bbar + c*cbar;
+        if (dot < 0.8) {
+            free(Bbar);
             return false;
         }
 
@@ -840,14 +892,17 @@ void computeHalfEdgeError(struct halfEdge* he) {
 }
 
 void computeError() {
-    struct halfEdgeList* current = edges;
-    while (current != NULL) {
+    struct halfEdgeList* current;
+    while (edges != NULL) {
+
+        current = edges;
 
         computeHalfEdgeError(current->current);
 
         edgesTree = insertNode(edgesTree, current->current);
 
-        current = current->next;
+        edges = edges->next;
+        free(current);
     }
 }
 
@@ -860,7 +915,7 @@ void clearGlobals() {
     }
     free(vertices);
 
-    for (int i = 0; i < nbFaces; i++) {
+    for (int i = 0; i < facesLen; i++) {
         if (faces[i] != NULL) {
             free(faces[i]->vertexIndex);
             free(faces[i]);
@@ -868,15 +923,15 @@ void clearGlobals() {
     }
     free(faces);
 
-    struct halfEdgeList* current;
-    while (edges != NULL) {
-        current = edges;
-        edges = edges->next;
-        free(current->current->error);
-        free(current->current->vbar);
-        free(current->current);
-        free(current);
-    }
+    // struct halfEdgeList* current;
+    // while (edges != NULL) {
+    //     current = edges;
+    //     edges = edges->next;
+    //     free(current->current->error);
+    //     free(current->current->vbar);
+    //     free(current->current);
+    //     free(current);
+    // }
 
     freeAVLTree(edgesTree);
 }
@@ -903,16 +958,58 @@ void computeVertexMatrix(struct halfEdge* he) {
     }
 }
 
+void printHalfEdgeVois(struct halfEdge* he) {
+    printf("\n");
+    struct halfEdge* cur = he->next->pair->next;
+    printf("\t");
+    while (cur != he->pair->prev->pair) {
+        printf("%3i ", cur->endVertex->index);
+        cur = cur->pair->next;
+    }
+    printf("\n");
+    printf("\t%3i     %3i\n", he->next->endVertex->index, he->pair->prev->startVertex->index);
+    printf("\t    %3i\n", he->endVertex->index);
+    printf("\t     ^ \n");
+    printf("\t     | \n");
+    printf("\t     | \n");
+    printf("\t    %3i\n", he->startVertex->index);
+    printf("\t%3i     %3i\n", he->prev->startVertex->index, he->pair->next->endVertex->index);
+    cur = he->prev->pair->prev;
+    printf("\t");
+    while (cur != he->pair->next->pair) {
+        printf("%3i ", cur->startVertex->index);
+        cur = cur->pair->prev;
+    }
+    printf("\n");
+    printf("\n");
+}
+
+void printHalfEdgeStartVertexVois(struct halfEdge* he) {
+    struct halfEdge* cur = he->pair->next;
+    printf("vertex %3i vois : %3i ", he->startVertex->index, he->endVertex->index);
+    while (cur != he) {
+        printf("%3i ", cur->endVertex->index);
+        cur = cur->pair->next;
+    }
+    printf("\n\n");
+}
+
+void printTreeInOrder(struct halfEdgeAVL* tree) {
+    if (tree == NULL) return;
+    printTreeInOrder(tree->left);
+    struct halfEdgeAVL* curr = tree;
+    while (curr != NULL) {
+        printf("%s %s %lf\n", curr->data->error->valid ? "t" : "f", curr->data->error->good ? "t" : "f",curr->data->error->err);
+        curr = curr->equal;
+    }
+    printf("\n");
+    printTreeInOrder(tree->right);
+}
+
 void contractEdge(struct halfEdge* he) {
     struct halfEdge* pair = he->pair;
 
-    // suppression de la liste des aretes
-    struct halfEdgeList* edge = find(edges, he);
-    pop(&edges, edge);
-    free(edge);
-    struct halfEdgeList* pairEdge = find(edges, pair);
-    pop(&edges, pairEdge);
-    free(pairEdge);
+    // printHalfEdgeVois(he);
 
     edgesTree = deleteNode(edgesTree, findNode(edgesTree, he));
     edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair));
@@ -924,6 +1021,7 @@ void contractEdge(struct halfEdge* he) {
         cur->pair->endVertex = he->startVertex;
         cur = cur->pair->next;
     }
+
     // ajustemet des face au point d'arrive
     cur = he->next->pair->next;
     while (cur != pair) {
@@ -944,18 +1042,12 @@ void contractEdge(struct halfEdge* he) {
         edgesTree = deleteNode(edgesTree, findNode(edgesTree, he->prev));
         edgesTree = deleteNode(edgesTree, findNode(edgesTree, he->next));
 
-        struct halfEdgeList* prevEdge = find(edges, he->prev);
-        pop(&edges, prevEdge);
         free(he->prev->error);
         free(he->prev->vbar);
         free(he->prev);
-        free(prevEdge);
-        struct halfEdgeList* nextEdge = find(edges, he->next);
-        pop(&edges, nextEdge);
         free(he->next->error);
         free(he->next->vbar);
         free(he->next);
-        free(nextEdge);
 
         nbFaces -= 1;
         faces[he->face->index] = NULL;
@@ -984,22 +1076,15 @@ void contractEdge(struct halfEdge* he) {
     if (pairFace->len == 3) {
         pair->prev->pair->pair = pair->next->pair;
         pair->next->pair->pair = pair->prev->pair;
-
         edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair->prev));
         edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair->next));
 
-        struct halfEdgeList* pairPrevEdge = find(edges, pair->prev);
-        pop(&edges, pairPrevEdge);
         free(pair->prev->error);
         free(pair->prev->vbar);
         free(pair->prev);
-        free(pairPrevEdge);
-        struct halfEdgeList* pairNextEdge = find(edges, pair->next);
-        pop(&edges, pairNextEdge);
         free(pair->next->error);
         free(pair->next->vbar);
         free(pair->next);
-        free(pairNextEdge);
         
         nbFaces -= 1;
         faces[pair->face->index] = NULL;
@@ -1027,7 +1112,9 @@ void contractEdge(struct halfEdge* he) {
     he->startVertex->x = he->vbar[0];
     he->startVertex->y = he->vbar[1];
     he->startVertex->z = he->vbar[2];
-    // computeVertexMatrix(he->prev->pair->pair);
+    computeVertexMatrix(he->prev->pair->pair);
+
+    // printHalfEdgeStartVertexVois(he->next->pair->pair);
 
     // suppression du sommet de la liste des sommets
     nbVertices -= 1;
@@ -1043,94 +1130,140 @@ void contractEdge(struct halfEdge* he) {
     free(he);
 }
 
-struct halfEdge* findMinErrorEdge(struct halfEdgeList* start) {
-    // struct halfEdgeList* current = start;
-    // bool good = FALSE;
-    // struct halfEdge* minErrorEdge = NULL;
-    // while (current != NULL) {
-    //     bool isValid = validContract(current->current);
-    //     if (isValid) {
-    //         bool isGood = goodContract(current->current);
-    //         bool cond = minErrorEdge == NULL || current->current->error < minErrorEdge->error;
-    //         if (minErrorEdge == NULL ||
-    //             (!good && isGood) ||
-    //             (!(good && !isGood) && cond)) {
-               
-    //             minErrorEdge = current->current;
-    //             good = isGood;
-    //         }
-    //     }
-
-    //     current = current->next;
-    // }
-    // return minErrorEdge;
-    struct halfEdgeAVL* node = minValueNode(edgesTree);
-    return node->data;
+struct halfEdgeAVL* findMinErrorEdge(struct halfEdgeAVL* tree) {
+    struct halfEdgeAVL* node = minValueNode(tree);
+    return node;
 }
 
 void recomputeErrorVertex(struct halfEdge* sentinelEdgeForErrorRecompute) {
     struct halfEdge* current = sentinelEdgeForErrorRecompute->next->pair;
     struct halfEdgeAVL* treeNode = findNode(edgesTree, sentinelEdgeForErrorRecompute);
-    printf("%i\n", treeNode);
+    struct halfEdgeError* oldErr = malloc(sizeof(struct halfEdgeError));
+    *oldErr = *(treeNode->data->error);
     computeHalfEdgeError(sentinelEdgeForErrorRecompute);
-    updateTreeFromNode(edgesTree, treeNode);
-    printf("SUCCES\n");
+    updateTreeFromNode(treeNode, oldErr);
 
     treeNode = findNode(edgesTree, sentinelEdgeForErrorRecompute->pair);
+    *oldErr = *(treeNode->data->error);
     sentinelEdgeForErrorRecompute->pair->error->valid = sentinelEdgeForErrorRecompute->error->valid;
     sentinelEdgeForErrorRecompute->pair->error->good = sentinelEdgeForErrorRecompute->error->good;
     sentinelEdgeForErrorRecompute->pair->error->err = sentinelEdgeForErrorRecompute->error->err;
     sentinelEdgeForErrorRecompute->pair->vbar[0] = sentinelEdgeForErrorRecompute->vbar[0];
     sentinelEdgeForErrorRecompute->pair->vbar[1] = sentinelEdgeForErrorRecompute->vbar[1];
     sentinelEdgeForErrorRecompute->pair->vbar[2] = sentinelEdgeForErrorRecompute->vbar[2];
-    updateTreeFromNode(edgesTree, treeNode);
-    current = current->next->pair;
+    updateTreeFromNode(treeNode, oldErr);
+
     while (current != sentinelEdgeForErrorRecompute) {
         treeNode = findNode(edgesTree, current);
+        *oldErr = *(treeNode->data->error);
         computeHalfEdgeError(current);
-        updateTreeFromNode(edgesTree, treeNode);
+        updateTreeFromNode(treeNode, oldErr);
 
         treeNode = findNode(edgesTree, current->pair);
+        *oldErr = *(treeNode->data->error);
         current->pair->error->valid = current->error->valid;
         current->pair->error->good = current->error->good;
         current->pair->error->err = current->error->err;
         current->pair->vbar[0] = current->vbar[0];
         current->pair->vbar[1] = current->vbar[1];
         current->pair->vbar[2] = current->vbar[2];
-        updateTreeFromNode(edgesTree, treeNode);
+        updateTreeFromNode(treeNode, oldErr);
 
         current = current->next->pair;
     }
+    free(oldErr);
 }
 
-void contractMinErrorEdge() {
-    struct halfEdge* minErrorEdge = findMinErrorEdge(edges);
+struct halfEdge* lastMin;
+
+int contractMinErrorEdge() {
+    struct halfEdgeAVL* minErrorEdgeNode = findMinErrorEdge(edgesTree);
+    struct halfEdge* minErrorEdge = minErrorEdgeNode->data;
+
     struct halfEdge* sentinelEdgeForErrorRecompute = minErrorEdge->next->pair;
+    
+    if (lastMin == minErrorEdge && !minErrorEdge->error->valid) {
+        return 2;
+    }
+
+    if (!validContract(minErrorEdge)) {
+        struct halfEdgeAVL* treeNode = findNode(edgesTree, minErrorEdge);
+        struct halfEdgeError* oldErr = malloc(sizeof(struct halfEdgeError));
+        *oldErr = *(treeNode->data->error);
+        computeHalfEdgeError(minErrorEdge);
+        updateTreeFromNode(treeNode, oldErr);
+
+        treeNode = findNode(edgesTree, minErrorEdge->pair);
+        *oldErr = *(treeNode->data->error);
+        minErrorEdge->pair->error->valid = minErrorEdge->error->valid;
+        minErrorEdge->pair->error->good = minErrorEdge->error->good;
+        minErrorEdge->pair->error->err = minErrorEdge->error->err;
+        minErrorEdge->pair->vbar[0] = minErrorEdge->vbar[0];
+        minErrorEdge->pair->vbar[1] = minErrorEdge->vbar[1];
+        minErrorEdge->pair->vbar[2] = minErrorEdge->vbar[2];
+        updateTreeFromNode(treeNode, oldErr);
+
+        free(oldErr);
+        lastMin = minErrorEdge;
+        return 1;
+    }
+
+    if (lastMin != minErrorEdge && !goodContract(minErrorEdge)) {
+        struct halfEdgeAVL* treeNode = findNode(edgesTree, minErrorEdge);
+        struct halfEdgeError* oldErr = malloc(sizeof(struct halfEdgeError));
+        *oldErr = *(treeNode->data->error);
+        computeHalfEdgeError(minErrorEdge);
+        updateTreeFromNode(treeNode, oldErr);
+
+        treeNode = findNode(edgesTree, minErrorEdge->pair);
+        *oldErr = *(treeNode->data->error);
+        minErrorEdge->pair->error->valid = minErrorEdge->error->valid;
+        minErrorEdge->pair->error->good = minErrorEdge->error->good;
+        minErrorEdge->pair->error->err = minErrorEdge->error->err;
+        minErrorEdge->pair->vbar[0] = minErrorEdge->vbar[0];
+        minErrorEdge->pair->vbar[1] = minErrorEdge->vbar[1];
+        minErrorEdge->pair->vbar[2] = minErrorEdge->vbar[2];
+        updateTreeFromNode(treeNode, oldErr);
+
+        free(oldErr);
+        lastMin = minErrorEdge;
+        return 1;
+    }
+
+    lastMin = NULL;
+
     contractEdge(minErrorEdge);
-    // recomputeErrorVertex(sentinelEdgeForErrorRecompute);
+    recomputeErrorVertex(sentinelEdgeForErrorRecompute);
+    return 0;
 }
 
 void contractEdgeTo(int goalVertices) {
     int nbIterations = nbVertices - goalVertices;
     printf("Contracting edge :\n");
     for (int i = 0; i < nbIterations; i++) {
-        // printLoadingBar(i, nbIterations);
-        contractMinErrorEdge();
+        // printf("\n");
+        printLoadingBar(i, nbIterations);
+        // printf("\n");
+        
+        // 0 contract succes
+        // 1 contract to do
+        // 2 no contract valid
+        bool loop = true;
+        while (loop) {
+            bool succes = contractMinErrorEdge();
+            if (succes == 0) {
+                loop = false;
+            } else if (succes == 1) {
+                loop = true;
+            } else if (succes == 2) {
+                printf("\n Error : No more edge can be contracted\n");
+                return;
+            }
+        }
+        
     }
     printLoadingBar(nbIterations, nbIterations);
     printf("\n\n");
-}
-
-void printTreeInOrder(struct halfEdgeAVL* tree) {
-    if (tree == NULL) return;
-    printTreeInOrder(tree->left);
-    struct halfEdgeAVL* curr = tree;
-    while (curr != NULL) {
-        printf("%s %s %lf\n", curr->data->error->valid ? "t" : "f", curr->data->error->good ? "t" : "f",curr->data->error->err);
-        curr = curr->equal;
-    }
-    printf("\n");
-    printTreeInOrder(tree->right);
 }
 
 int main(int argc, char *argv[]) {
