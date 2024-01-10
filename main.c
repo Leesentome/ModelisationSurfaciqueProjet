@@ -781,10 +781,6 @@ float edgeLengthSquared(struct halfEdge* edge) {
     return x_len * x_len + y_len * y_len + z_len * z_len;
 }
 
-void computeHalfEdgeLengthError(struct halfEdge* he) {
-    // TODO
-}
-
 bool validContract(struct halfEdge* he) {
     struct vertice** oneRingVertices = malloc(sizeof(struct vertice*) * nbVertices);
 
@@ -1009,8 +1005,6 @@ void printTreeInOrder(struct halfEdgeAVL* tree) {
 void contractEdge(struct halfEdge* he) {
     struct halfEdge* pair = he->pair;
 
-    // printHalfEdgeVois(he);
-
     edgesTree = deleteNode(edgesTree, findNode(edgesTree, he));
     edgesTree = deleteNode(edgesTree, findNode(edgesTree, pair));
 
@@ -1114,7 +1108,6 @@ void contractEdge(struct halfEdge* he) {
     he->startVertex->z = he->vbar[2];
     computeVertexMatrix(he->prev->pair->pair);
 
-    // printHalfEdgeStartVertexVois(he->next->pair->pair);
 
     // suppression du sommet de la liste des sommets
     nbVertices -= 1;
@@ -1241,9 +1234,7 @@ void contractEdgeTo(int goalVertices) {
     int nbIterations = nbVertices - goalVertices;
     printf("Contracting edge :\n");
     for (int i = 0; i < nbIterations; i++) {
-        // printf("\n");
         printLoadingBar(i, nbIterations);
-        // printf("\n");
         
         // 0 contract succes
         // 1 contract to do
